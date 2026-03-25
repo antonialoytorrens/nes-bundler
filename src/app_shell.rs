@@ -1,29 +1,31 @@
-use sdl3::EventPump;
 use winit::application::ApplicationHandler;
 use winit::event::{StartCause, WindowEvent};
 
 use crate::app_context::AppContext;
 use crate::game_runtime::GameRuntime;
-use crate::input::gamepad::ToGamepadEvent;
 use crate::main_view::MainView;
-use crate::main_view::gui::GuiEvent;
 use crate::ui_controller::UiController;
 use crate::window::Fullscreen;
 use crate::{Size, emulation, integer_scaling, window};
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+use crate::{input::gamepad::ToGamepadEvent, main_view::gui::GuiEvent};
 
 pub struct AppShell {
     app: &'static AppContext,
     main_view: Option<MainView>,
     runtime: GameRuntime,
-    sdl_event_pump: EventPump,
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+    sdl_event_pump: sdl3::EventPump,
     ui: UiController,
 }
 
 impl AppShell {
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
     pub fn new(
         app: &'static AppContext,
         runtime: GameRuntime,
-        sdl_event_pump: EventPump,
+        sdl_event_pump: sdl3::EventPump,
         ui: UiController,
     ) -> Self {
         Self {
@@ -31,6 +33,20 @@ impl AppShell {
             main_view: None,
             runtime,
             sdl_event_pump,
+            ui,
+        }
+    }
+
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
+    pub fn new(
+        app: &'static AppContext,
+        runtime: GameRuntime,
+        ui: UiController,
+    ) -> Self {
+        Self {
+            app,
+            main_view: None,
+            runtime,
             ui,
         }
     }
@@ -73,6 +89,8 @@ impl ApplicationHandler for AppShell {
         };
 
         Self::handle_window_action(event_loop, &mut self.ui, main_view, &window_event);
+
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
         Self::forward_sdl_events(&mut self.sdl_event_pump, &mut self.ui, main_view);
 
         self.runtime.write_inputs(self.ui.current_game_inputs());
@@ -102,8 +120,9 @@ impl AppShell {
         }
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
     fn forward_sdl_events(
-        sdl_event_pump: &mut EventPump,
+        sdl_event_pump: &mut sdl3::EventPump,
         ui: &mut UiController,
         main_view: &mut MainView,
     ) {

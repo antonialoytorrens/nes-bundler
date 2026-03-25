@@ -9,9 +9,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::hash_map::DefaultHasher,
-    fs::File,
     hash::{Hash, Hasher},
-    io::{BufReader, BufWriter},
     ops::{Deref, DerefMut},
     sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
@@ -107,17 +105,13 @@ impl Settings {
 
     fn load() -> Settings {
         let bundle = Bundle::current();
-        let settings_file_path = &bundle.settings_path.join("settings.yaml");
         let default_settings = bundle.config.default_settings.clone();
 
-        let mut settings: Result<Settings> = File::open(settings_file_path)
-            .map_err(anyhow::Error::msg)
-            .and_then(|f| serde_yaml::from_reader(BufReader::new(f)).map_err(anyhow::Error::msg));
+        let mut settings: Result<Settings> = Self::load_from_storage(bundle);
 
         match &mut settings {
             Ok(settings) => {
                 let default_selected = default_settings.input.selected.clone();
-                //Make sure no gamepads are selected after loading settings (they will be autoselected later if they are connected)
                 for (player, default_selected_input) in
                     default_selected.iter().enumerate().take(MAX_PLAYERS)
                 {
@@ -128,28 +122,59 @@ impl Settings {
                     }
                 }
             }
-            Err(e) => log::warn!(
-                "Could not load settings ({:?}): {:?}",
-                settings_file_path,
-                e
-            ),
+            Err(e) => log::warn!("Could not load settings: {:?}", e),
         }
-        //TODO: Check if the error is something else than file not found and log
-        //eprintln!("Failed to load config ({err}), falling back to default settings");
         settings.unwrap_or(default_settings)
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_from_storage(bundle: &Bundle) -> Result<Settings> {
+        let settings_file_path = bundle.settings_path.join("settings.yaml");
+        let f = std::fs::File::open(&settings_file_path).map_err(anyhow::Error::msg)?;
+        serde_yaml::from_reader(std::io::BufReader::new(f)).map_err(anyhow::Error::msg)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load_from_storage(_bundle: &Bundle) -> Result<Settings> {
+        let storage = web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .ok_or_else(|| anyhow::anyhow!("localStorage not available"))?;
+        let data = storage
+            .get_item("nes-bundler-settings")
+            .map_err(|_| anyhow::anyhow!("failed to read localStorage"))?
+            .ok_or_else(|| anyhow::anyhow!("no saved settings"))?;
+        serde_yaml::from_str(&data).map_err(anyhow::Error::msg)
+    }
+
     fn save(&self) {
-        let settings_file_path = &Bundle::current().settings_path.join("settings.yaml");
-        if let Err(e) = File::create(settings_file_path)
-            .map_err(anyhow::Error::msg)
-            .and_then(|file| {
-                serde_yaml::to_writer(BufWriter::new(file), self).map_err(anyhow::Error::msg)
-            })
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            log::error!("Failed to save settings: {:?}", e);
-        } else {
-            log::debug!("Settings saved");
+            let settings_file_path = &Bundle::current().settings_path.join("settings.yaml");
+            if let Err(e) = std::fs::File::create(settings_file_path)
+                .map_err(anyhow::Error::msg)
+                .and_then(|file| {
+                    serde_yaml::to_writer(std::io::BufWriter::new(file), self)
+                        .map_err(anyhow::Error::msg)
+                })
+            {
+                log::error!("Failed to save settings: {:?}", e);
+            } else {
+                log::debug!("Settings saved");
+            }
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(storage) = web_sys::window().and_then(|w| w.local_storage().ok().flatten())
+            {
+                match serde_yaml::to_string(self) {
+                    Ok(data) => {
+                        let _ = storage.set_item("nes-bundler-settings", &data);
+                        log::debug!("Settings saved to localStorage");
+                    }
+                    Err(e) => log::error!("Failed to serialize settings: {:?}", e),
+                }
+            }
         }
     }
 

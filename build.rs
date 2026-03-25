@@ -1,8 +1,7 @@
-use std::{env, fs::File, io::Write};
+use std::env;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use tinytemplate::TinyTemplate;
 
 #[derive(Deserialize, Serialize, Clone)]
 struct BundleConfiguration {
@@ -19,6 +18,22 @@ fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=config/rom.nes");
     println!("cargo:rerun-if-changed=config/netplay-rom.nes");
     println!("cargo:rerun-if-changed=config/palette.pal");
+
+    let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+
+    // Desktop-only template generation (not needed for WASM or Android)
+    if target_arch != "wasm32" && target_os != "android" {
+        generate_desktop_templates()?;
+    }
+
+    Ok(())
+}
+
+fn generate_desktop_templates() -> Result<()> {
+    use std::{fs::File, io::Write};
+    use tinytemplate::TinyTemplate;
+
     println!("cargo:rerun-if-changed=config/linux/bundle.desktop-template");
     println!("cargo:rerun-if-changed=config/macos/Info.plist-template");
     println!("cargo:rerun-if-changed=config/windows/wix/main.wxs-template");

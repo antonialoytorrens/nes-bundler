@@ -3,7 +3,6 @@ use self::{
     gamepad::{Gamepads, JoypadGamepadMapping},
     keyboard::{JoypadKeyboardMapping, Keyboards},
     keys::{KeyCode, Modifiers},
-    sdl3_impl::SDL3Gamepads,
     settings::InputSettings,
 };
 use crate::{bundle::Bundle, main_view::gui::GuiEvent, settings::MAX_PLAYERS};
@@ -15,8 +14,21 @@ pub mod gamepad;
 pub mod gui;
 pub mod keyboard;
 pub mod keys;
-pub mod sdl3_impl;
 pub mod settings;
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub mod sdl3_impl;
+#[cfg(target_arch = "wasm32")]
+pub mod web_impl;
+#[cfg(target_os = "android")]
+pub mod stub_impl;
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use sdl3_impl::SDL3Gamepads as PlatformGamepads;
+#[cfg(target_arch = "wasm32")]
+pub use web_impl::WebGamepads as PlatformGamepads;
+#[cfg(target_os = "android")]
+pub use stub_impl::StubGamepads as PlatformGamepads;
 
 #[derive(Clone, Debug)]
 pub enum KeyEvent {
@@ -89,10 +101,6 @@ impl<KeyType: Debug> JoypadMapping<KeyType> {
 }
 
 impl<KeyType: Eq + Hash + Debug> JoypadMapping<KeyType> {
-    /// Compute the joypad state from a set of currently-pressed keys.
-    ///
-    /// Iterates all 8 button mappings exactly once (O(8)), avoiding per-key
-    /// HashSet allocations that the previous reverse-lookup approach incurred.
     fn calculate_state(&self, keys: &HashSet<KeyType>) -> JoypadState {
         let bits = [
             (JoypadButton::Up, &self.up),
@@ -158,12 +166,12 @@ pub struct MapRequest {
 
 pub struct Inputs {
     keyboards: Keyboards,
-    gamepads: SDL3Gamepads,
+    gamepads: PlatformGamepads,
     joypads: [JoypadState; MAX_PLAYERS],
 }
 
 impl Inputs {
-    pub fn new(gamepads: SDL3Gamepads) -> Self {
+    pub fn new(gamepads: PlatformGamepads) -> Self {
         Self {
             keyboards: Keyboards::default(),
             gamepads,
@@ -183,7 +191,6 @@ impl Inputs {
         input_settings.reset_selected_disconnected_inputs(self);
 
         for player in 0..MAX_PLAYERS {
-            // Compute with &self first, then assign — avoids a simultaneous &self / &mut self conflict.
             let state =
                 self.joypad_for_input_configuration(input_settings.selected_configuration(player));
             self.joypads[player] = state;
@@ -250,7 +257,6 @@ impl Inputs {
                     if let Some(state) = gamepads.get_gamepad_by_input_id(&input_configuration_id)
                         && let Some(new_button) = state.get_pressed_buttons().iter().next()
                     {
-                        //If there's any button pressed, use the first found... unless it's the reserved "Guide" button used for bringing up the main menu
                         if !matches!(new_button, GamepadButton::Guide) {
                             let _ = mapping.lookup(button).insert(*new_button);
                             remapped = true;

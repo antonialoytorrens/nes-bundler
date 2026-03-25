@@ -36,7 +36,7 @@ pub const NES_HEIGHT: u32 = 240;
 
 static NTSC_PAL: &[u8] = include_bytes!("../../config/palette.pal");
 
-#[allow(dead_code)] // Some commands are only sent by certain features
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum EmulatorCommand {
     Reset(bool),
@@ -92,6 +92,7 @@ impl SharedState {
 
 pub struct Emulator {
     pub shared_state: SharedState,
+    #[cfg(not(target_arch = "wasm32"))]
     th: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -111,6 +112,7 @@ struct EmulatorRuntime {
     netplay_command_rx: tokio::sync::mpsc::Receiver<crate::netplay::NetplayCommand>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl EmulatorRuntime {
     fn spawn(self, local_nes_state: LocalNesState) -> std::thread::JoinHandle<()> {
         std::thread::spawn(move || {
@@ -166,16 +168,13 @@ impl EmulatorRuntime {
                         .frame
                         .store(frame, Emulator::FRAME_WRITE_ORDERING);
 
-                    //TODO: Figure out why this is needed (probably to avoid busy loop..)
                     tokio::task::yield_now().await;
 
-                    // 2) periodic SRAM snapshot (non-blocking check)
                     if frame.is_multiple_of(Emulator::SRAM_SNAPSHOT_INTERVAL_FRAMES) {
                         use base64::Engine;
                         use base64::engine::general_purpose::STANDARD_NO_PAD as b64;
                         if let Some(sram) = nes_state.save_sram() {
                             let sram = sram.to_vec();
-                            // Do this in a blocking task as we want the main loop free from blocking code
                             tokio::task::spawn_blocking(move || {
                                 Settings::current_mut().save_state = Some(b64.encode(sram));
                             });
@@ -189,12 +188,8 @@ impl EmulatorRuntime {
 
 impl Emulator {
     const COMMAND_CHANNEL_CAPACITY: usize = 1;
-    /// Ordering used when the emulator thread *reads* the inputs written by the main thread.
-    /// Paired with `Release` stores in `GameRuntime::write_inputs` to form a proper
-    /// acquire-release pair, which is required for correctness on weak memory models (e.g. ARM).
     pub(crate) const INPUT_READ_ORDERING: std::sync::atomic::Ordering =
         std::sync::atomic::Ordering::Acquire;
-    /// Ordering used when the emulator thread *writes* the frame counter read by other threads.
     const FRAME_WRITE_ORDERING: std::sync::atomic::Ordering = std::sync::atomic::Ordering::Release;
     const SRAM_SNAPSHOT_INTERVAL_FRAMES: u32 = 100;
 
@@ -250,10 +245,58 @@ impl Emulator {
             #[cfg(feature = "netplay")]
             netplay_command_rx,
         };
-        let thread_handle = runtime.spawn(nes_state);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let th = Some(runtime.spawn(nes_state));
+
+        // On WASM, run the emulator loop via spawn_local (single-threaded)
+        #[cfg(target_arch = "wasm32")]
+        {
+            let EmulatorRuntime {
+                inputs,
+                frame_buffer,
+                shared_emulator,
+                mut emulator_rx,
+                mut audio_producer,
+                ..
+            } = runtime;
+
+            let mut nes_state = nes_state;
+
+            wasm_bindgen_futures::spawn_local(async move {
+                loop {
+                    if Self::drain_pending_commands(&mut emulator_rx, &mut nes_state) {
+                        break;
+                    }
+
+                    let mut frame_result = frame_buffer.push_ref();
+                    nes_state
+                        .advance(
+                            Self::read_input_states(&inputs),
+                            Some(NESBuffers {
+                                audio: &mut audio_producer,
+                                video: frame_result.as_deref_mut().ok(),
+                            }),
+                        )
+                        .await;
+
+                    let frame = nes_state.frame();
+                    shared_emulator
+                        .state
+                        .frame
+                        .store(frame, Self::FRAME_WRITE_ORDERING);
+
+                    // Yield to the browser event loop
+                    let promise = js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL);
+                    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+                }
+            });
+        }
+
         Self {
             shared_state,
-            th: Some(thread_handle),
+            #[cfg(not(target_arch = "wasm32"))]
+            th,
         }
     }
 }
@@ -264,11 +307,15 @@ impl Drop for Emulator {
             .shared_state
             .emulator
             .command_tx
-            .blocking_send(EmulatorCommand::Shutdown);
-        if let Some(th) = self.th.take()
-            && let Err(e) = th.join()
+            .try_send(EmulatorCommand::Shutdown);
+
+        #[cfg(not(target_arch = "wasm32"))]
         {
-            log::warn!("Failed to join emulator thread: {e:?}");
+            if let Some(th) = self.th.take()
+                && let Err(e) = th.join()
+            {
+                log::warn!("Failed to join emulator thread: {e:?}");
+            }
         }
     }
 }
@@ -312,7 +359,6 @@ pub struct NESVideoFrame(Vec<u8>);
 impl NESVideoFrame {
     pub const SIZE: usize = (NES_WIDTH * NES_HEIGHT * 4) as usize;
 
-    /// Allocate a new frame for video output.
     pub fn new() -> Self {
         let mut frame = vec![0; Self::SIZE];
         frame

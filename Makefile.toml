@@ -1,0 +1,54 @@
+[config]
+default_to_workspace = false
+
+# ── Desktop ─────────────────────────────────────────────────────────────────
+
+[tasks.build]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.run]
+command = "cargo"
+args = ["run"]
+
+# ── WASM ────────────────────────────────────────────────────────────────────
+
+[tasks.add-wasm-target]
+command = "rustup"
+args = ["target", "add", "wasm32-unknown-unknown"]
+
+[tasks.build-web]
+dependencies = ["add-wasm-target"]
+command = "trunk"
+args = ["build", "--release", "--dist", "dist/web", "--public-url", "./"]
+
+[tasks.run-web]
+dependencies = ["add-wasm-target"]
+command = "trunk"
+args = ["serve", "--release", "--address", "0.0.0.0"]
+
+[tasks.dev-web]
+dependencies = ["add-wasm-target"]
+command = "trunk"
+args = ["serve", "--address", "0.0.0.0"]
+
+[tasks.lint-web]
+dependencies = ["add-wasm-target"]
+command = "cargo"
+args = ["clippy", "--target", "wasm32-unknown-unknown", "--lib"]
+
+# ── Android ─────────────────────────────────────────────────────────────────
+
+[tasks.build-android]
+command = "x"
+args = ["build", "--release", "--platform", "android", "--arch", "arm64"]
+
+[tasks.run-android]
+command = "x"
+args = ["run", "--release", "--platform", "android", "--arch", "arm64"]
+
+# ── Lint ────────────────────────────────────────────────────────────────────
+
+[tasks.lint]
+command = "cargo"
+args = ["clippy", "--all-features"]

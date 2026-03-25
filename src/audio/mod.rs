@@ -1,15 +1,30 @@
 use serde::{Deserialize, Serialize};
 
-use crate::audio::sdl3_impl::{SDL3AudioStream, SDL3AudioSystem, SDL3AvailableAudioDevice};
-
 pub mod pacer;
-
 pub mod gui;
-mod sdl3_impl;
 
-pub type AudioSystem = SDL3AudioSystem;
-pub type AudioStream = SDL3AudioStream;
-pub type AvailableAudioDevice = SDL3AvailableAudioDevice;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+mod sdl3_impl;
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+mod cpal_impl;
+
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use sdl3_impl::SDL3AudioSystem as AudioSystemImpl;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use sdl3_impl::SDL3AudioStream as AudioStreamImpl;
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
+pub use sdl3_impl::SDL3AvailableAudioDevice as AvailableAudioDeviceImpl;
+
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+pub use cpal_impl::CpalAudioSystem as AudioSystemImpl;
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+pub use cpal_impl::CpalAudioStream as AudioStreamImpl;
+#[cfg(any(target_arch = "wasm32", target_os = "android"))]
+pub use cpal_impl::CpalAvailableAudioDevice as AvailableAudioDeviceImpl;
+
+pub type AudioSystem = AudioSystemImpl;
+pub type AudioStream = AudioStreamImpl;
+pub type AvailableAudioDevice = AvailableAudioDeviceImpl;
 
 pub const MAX_AUDIO_LATENCY_MICROS: u32 = 40_000;
 pub const MIN_AUDIO_LATENCY_MICROS: u32 = 8_000;
@@ -40,7 +55,6 @@ impl AudioSettings {
         Ok(v)
     }
 
-    // Resolves the output device from settings and falls back to the system default.
     pub(crate) fn resolve_output_device(&self, audio_system: &AudioSystem) -> AvailableAudioDevice {
         self
             .output_device

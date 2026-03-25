@@ -1,0 +1,6 @@
+[build]
+target = "index.html"
+dist = "dist/web"
+
+[watch]
+watch = ["src", "config", "index.html"]

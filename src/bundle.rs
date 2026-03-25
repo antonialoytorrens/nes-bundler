@@ -1,11 +1,9 @@
 use std::{
-    fs,
     path::{Path, PathBuf},
     sync::OnceLock,
 };
 
 use anyhow::Result;
-use directories::ProjectDirs;
 use serde::Deserialize;
 
 use crate::{emulation::NesRegion, input::gui::InputButtonsVoca, settings::Settings};
@@ -43,15 +41,33 @@ impl BuildConfiguration {
             .first()
             .expect("at least one supported nes region")
     }
+
     pub fn config_dir(&self) -> Option<PathBuf> {
-        let path = ProjectDirs::from("", &self.manufacturer, &self.name)
-            .map(|pd| pd.config_dir().to_path_buf());
-        if let Some(path) = path.clone()
-            && let Err(e) = fs::create_dir_all(path)
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))]
         {
-            log::error!("Could not create path: {:?}", e);
+            let path = directories::ProjectDirs::from("", &self.manufacturer, &self.name)
+                .map(|pd| pd.config_dir().to_path_buf());
+            if let Some(path) = path.clone()
+                && let Err(e) = std::fs::create_dir_all(path)
+            {
+                log::error!("Could not create path: {:?}", e);
+            }
+            path
         }
-        path
+
+        #[cfg(target_os = "android")]
+        {
+            let path = PathBuf::from("/data/data/com.nesbundler/files");
+            if let Err(e) = std::fs::create_dir_all(&path) {
+                log::error!("Could not create Android config path: {:?}", e);
+            }
+            Some(path)
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            Some(PathBuf::from(""))
+        }
     }
 }
 
@@ -69,15 +85,7 @@ impl Bundle {
     }
 
     fn load() -> Result<Bundle> {
-        let external_config = fs::read_to_string(Path::new("config.yaml"))
-            .inspect_err(|e| log::info!("Not using external config.yaml: {:?}", e))
-            .map_err(anyhow::Error::msg)
-            .and_then(|config| serde_yaml::from_str(&config).map_err(anyhow::Error::msg));
-
-        let external_rom = fs::read(Path::new("rom.nes"))
-            .inspect_err(|e| log::info!("Not using external rom.nes: {:?}", e));
-
-        // Try to load from external bundle first and if that doesn't work fall back to the embedded bundle
+        let (external_config, external_rom) = Self::load_external_files();
 
         let config: BuildConfiguration =
             external_config.unwrap_or(serde_yaml::from_str(include_str!("../config/config.yaml"))?);
@@ -94,9 +102,41 @@ impl Bundle {
             rom,
 
             #[cfg(feature = "netplay")]
-            netplay_rom: fs::read(Path::new("netplay-rom.nes"))
-                .inspect_err(|e| log::info!("Not using external netplay-rom.nes: {:?}", e))
-                .unwrap_or(include_bytes!("../config/netplay-rom.nes").to_vec()),
+            netplay_rom: Self::load_netplay_rom(),
         })
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn load_external_files() -> (Option<BuildConfiguration>, Option<Vec<u8>>) {
+        let external_config = std::fs::read_to_string(Path::new("config.yaml"))
+            .inspect_err(|e| log::info!("Not using external config.yaml: {:?}", e))
+            .map_err(anyhow::Error::msg)
+            .and_then(|config| serde_yaml::from_str(&config).map_err(anyhow::Error::msg))
+            .ok();
+
+        let external_rom = std::fs::read(Path::new("rom.nes"))
+            .inspect_err(|e| log::info!("Not using external rom.nes: {:?}", e))
+            .ok();
+
+        (external_config, external_rom)
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn load_external_files() -> (Option<BuildConfiguration>, Option<Vec<u8>>) {
+        (None, None)
+    }
+
+    #[cfg(feature = "netplay")]
+    fn load_netplay_rom() -> Vec<u8> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            std::fs::read(Path::new("netplay-rom.nes"))
+                .inspect_err(|e| log::info!("Not using external netplay-rom.nes: {:?}", e))
+                .unwrap_or(include_bytes!("../config/netplay-rom.nes").to_vec())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            include_bytes!("../config/netplay-rom.nes").to_vec()
+        }
     }
 }

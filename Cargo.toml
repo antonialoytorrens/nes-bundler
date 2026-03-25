@@ -6,6 +6,10 @@ authors = ["Ted Steen <ted.steen@gmail.com>"]
 edition = "2024"
 publish = false
 
+[lib]
+name = "nes_bundler"
+crate-type = ["cdylib", "rlib"]
+
 [features]
 default = []
 
@@ -32,21 +36,14 @@ codegen-units = 1
 strip = true
 panic = 'abort'
 
+# ── Cross-platform dependencies ──────────────────────────────────────────────
 [dependencies]
 log = "0.4"
-env_logger = "0.11"
 anyhow = "1.0"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 bitflags = "2"
 rand = "0.10"
-
-tokio = { version = "1", features = [
-  "rt",
-  "macros",
-  "rt-multi-thread",
-  "sync",
-] }
 futures = "0.3"
 
 egui = { version = "0.33", default-features = false, features = [
@@ -59,21 +56,19 @@ egui_plot = { version = "0.34", optional = true }
 puffin = { git = "https://github.com/blip-radar/puffin.git", rev = "4a51e9f504f584e2e68a404cf24812bbb1be2300", optional = true }
 puffin_egui = { git = "https://github.com/blip-radar/puffin.git", rev = "4a51e9f504f584e2e68a404cf24812bbb1be2300", optional = true }
 
-egui-winit = "0.33"
+egui-winit = { version = "0.33", default-features = false }
 egui-wgpu = "0.33"
 winit = "0.30"
-wgpu = { version = "27", features = ["dx12", "metal"] }
+wgpu = "27"
 raw-window-handle = "0.6"
 
-sdl3 = { version = "0.17", features = ["build-from-source-static"] }
-
-tetanes-core = { git = "https://github.com/lukexor/tetanes.git" }
+tetanes-core = { git = "https://github.com/antonialoytorrens/tetanes.git", branch = "android-antigravity" }
 postcard = { version = "1.1", features = ["alloc"] }
 thingbuf = "0.1"
 ringbuf = "0.4"
 
 base64 = "0.22"
-directories = "6.0"
+pollster = "0.4"
 
 # Netplay deps
 matchbox_socket = { version = "0.14", features = ["ggrs"], optional = true }
@@ -83,6 +78,52 @@ uuid = { version = "1", features = ["v4"], optional = true }
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls"], optional = true }
 md5 = { version = "0.8", optional = true }
 
+# ── Desktop-only (not WASM, not Android) ─────────────────────────────────────
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "android")))'.dependencies]
+sdl3 = { version = "0.17", features = ["build-from-source-static"] }
+directories = "6.0"
+env_logger = "0.11"
+wgpu = { version = "27", features = ["dx12", "metal"] }
+egui-winit = { version = "0.33", default-features = false, features = ["clipboard", "links", "wayland", "x11"] }
+
+# ── Native (desktop + Android, not WASM) ─────────────────────────────────────
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["rt", "macros", "rt-multi-thread", "sync"] }
+
+# ── WASM-only ────────────────────────────────────────────────────────────────
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1", features = ["sync"] }
+cpal = { version = "0.16", features = ["wasm-bindgen"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Window",
+  "Navigator",
+  "Gamepad",
+  "GamepadButton",
+  "GamepadEvent",
+  "Storage",
+  "HtmlCanvasElement",
+] }
+js-sys = "0.3"
+console_error_panic_hook = "0.1"
+console_log = "1"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_04 = { package = "getrandom", version = "0.4", features = ["wasm_js"] }
+egui-winit = { version = "0.33", default-features = false, features = ["links"] }
+web-time = "1.0"
+wgpu = { version = "27", features = ["webgl"] }
+
+# ── Android-only ─────────────────────────────────────────────────────────────
+[target.'cfg(target_os = "android")'.dependencies]
+cpal = "0.16"
+android_logger = "0.14"
+winit = { version = "0.30", features = ["android-native-activity"] }
+
+[package.metadata.android]
+build_targets = ["aarch64-linux-android"]
+
+# ── Build dependencies ───────────────────────────────────────────────────────
 [build-dependencies]
 anyhow = "1.0"
 serde_yaml = "0.9"
