@@ -59,7 +59,6 @@ impl Drop for AutoSavingSettings<'_> {
 pub struct Settings {
     pub audio: AudioSettings,
     pub input: InputSettings,
-    pub netplay_id: Option<String>,
     pub save_state: Option<String>,
     nes_region: Option<NesRegion>,
 }
@@ -96,13 +95,6 @@ impl Settings {
 
     pub fn current<'a>() -> RwLockReadGuard<'a, Settings> {
         SettingsStore::global().read()
-    }
-
-    #[cfg(feature = "netplay")]
-    pub fn ensure_netplay_id(&mut self) -> String {
-        self.netplay_id
-            .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
-            .to_string()
     }
 
     fn load() -> Settings {

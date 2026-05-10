@@ -68,14 +68,9 @@ pub struct SharedEmulator {
 #[derive(Clone)]
 pub struct SharedState {
     pub emulator: SharedEmulator,
-    #[cfg(feature = "netplay")]
-    pub netplay: crate::netplay::SharedNetplay,
 }
 impl SharedState {
-    fn new(
-        emulator_command_tx: EmulatorCommandBus,
-        #[cfg(feature = "netplay")] netplay: crate::netplay::SharedNetplay,
-    ) -> Self {
+    fn new(emulator_command_tx: EmulatorCommandBus) -> Self {
         Self {
             emulator: SharedEmulator {
                 command_tx: emulator_command_tx,
@@ -83,9 +78,6 @@ impl SharedState {
                 inputs: Arc::new([AtomicU8::new(0), AtomicU8::new(0)]),
                 frame_buffer: VideoBufferPool::new(),
             },
-
-            #[cfg(feature = "netplay")]
-            netplay,
         }
     }
 }
@@ -103,12 +95,6 @@ struct EmulatorRuntime {
     shared_emulator: SharedEmulator,
     emulator_rx: tokio::sync::mpsc::Receiver<EmulatorCommand>,
     audio_producer: AudioProducer,
-    #[cfg(feature = "netplay")]
-    shared_netplay: crate::netplay::SharedNetplay,
-    #[cfg(feature = "netplay")]
-    netplay_state_sender: tokio::sync::watch::Sender<crate::netplay::SharedNetplayState>,
-    #[cfg(feature = "netplay")]
-    netplay_command_rx: tokio::sync::mpsc::Receiver<crate::netplay::NetplayCommand>,
 }
 
 impl EmulatorRuntime {
@@ -125,23 +111,9 @@ impl EmulatorRuntime {
                 shared_emulator,
                 mut emulator_rx,
                 mut audio_producer,
-                #[cfg(feature = "netplay")]
-                shared_netplay,
-                #[cfg(feature = "netplay")]
-                netplay_state_sender,
-                #[cfg(feature = "netplay")]
-                netplay_command_rx,
             } = self;
 
-            #[allow(unused_mut)]
             let mut nes_state = local_nes_state;
-            #[cfg(feature = "netplay")]
-            let mut nes_state = crate::netplay::Netplay::new(
-                nes_state,
-                shared_netplay,
-                netplay_state_sender,
-                netplay_command_rx,
-            );
 
             tokio::task::LocalSet::new().block_on(&rt, async move {
                 loop {
@@ -227,15 +199,7 @@ impl Emulator {
         let audio_producer = audio_stream.take_producer();
         let (emulator_tx, emulator_rx) = tokio::sync::mpsc::channel(Self::COMMAND_CHANNEL_CAPACITY);
 
-        #[cfg(feature = "netplay")]
-        let (shared_netplay, netplay_state_sender, netplay_command_rx) =
-            crate::netplay::SharedNetplay::new();
-
-        let shared_state = SharedState::new(
-            emulator_tx.clone(),
-            #[cfg(feature = "netplay")]
-            shared_netplay,
-        );
+        let shared_state = SharedState::new(emulator_tx.clone());
 
         let runtime = EmulatorRuntime {
             inputs: shared_state.emulator.inputs.clone(),
@@ -243,12 +207,6 @@ impl Emulator {
             shared_emulator: shared_state.emulator.clone(),
             emulator_rx,
             audio_producer,
-            #[cfg(feature = "netplay")]
-            shared_netplay: shared_state.netplay.clone(),
-            #[cfg(feature = "netplay")]
-            netplay_state_sender,
-            #[cfg(feature = "netplay")]
-            netplay_command_rx,
         };
         let thread_handle = runtime.spawn(nes_state);
         Self {

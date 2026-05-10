@@ -30,31 +30,12 @@ mod gui;
 mod input;
 mod integer_scaling;
 mod main_view;
-#[cfg(feature = "netplay")]
-mod netplay;
 mod settings;
 mod ui_controller;
 mod window;
 
 fn main() {
     init_logger();
-
-    #[cfg(feature = "netplay")]
-    if std::env::args().any(|arg| arg == "--print-netplay-id") {
-        let app = AppContext::global();
-        if let netplay::configuration::NetplayServerConfiguration::TurnOn(turn_on_config) =
-            &app.config().netplay.server
-        {
-            println!("{0}", turn_on_config.resolved_netplay_id());
-            std::process::exit(0);
-        } else {
-            eprintln!(
-                "Netplay id not applicable for {0:#?}",
-                app.config().netplay.server
-            );
-            std::process::exit(1);
-        }
-    }
     log::info!("NES Bundler is starting!");
     if let Err(e) = run() {
         log::error!("nes-bundler failed to run :(\n{:?}", e)
@@ -71,7 +52,20 @@ fn run() -> anyhow::Result<()> {
     let sdl3_context = sdl3::init().map_err(anyhow::Error::msg)?;
     let sdl_event_pump: EventPump = sdl3_context.event_pump().map_err(anyhow::Error::msg)?;
 
-    let audio_system = AudioSystem::new(sdl3_context.audio().expect("An SDL audio subsystem"));
+    let audio_subsystem = match sdl3_context.audio() {
+        Ok(s) => s,
+        Err(e) => {
+            log::warn!(
+                "Could not initialize SDL audio subsystem ({}); falling back to silent dummy driver",
+                e
+            );
+            sdl3::hint::set("SDL_AUDIO_DRIVER", "dummy");
+            sdl3_context.audio().map_err(|e2| {
+                anyhow::anyhow!("dummy audio driver init failed: {}", e2)
+            })?
+        }
+    };
+    let audio_system = AudioSystem::new(audio_subsystem);
     let settings = app_context.settings();
     let mut stream = audio_system.start_stream(settings);
 

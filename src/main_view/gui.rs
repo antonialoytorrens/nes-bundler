@@ -48,7 +48,7 @@ pub enum MainMenuState {
 
     Main,
     Settings,
-    Netplay,
+    Emulator,
 }
 pub struct MainGui {
     start_time: Instant,
@@ -220,7 +220,7 @@ impl MainGui {
                         if let Some(name) = self.emulator_gui.name()
                             && Self::menu_item_ui(ui, name.to_uppercase()).clicked()
                         {
-                            self.menu_state = MainMenuState::Netplay;
+                            self.menu_state = MainMenuState::Emulator;
                         }
 
                         if Self::menu_item_ui(ui, "SETTINGS").clicked() {
@@ -304,7 +304,7 @@ impl MainGui {
                         });
                     });
                 }
-                MainMenuState::Netplay => {
+                MainMenuState::Emulator => {
                     if let Some(name) = self.emulator_gui.name().map(str::to_owned) {
                         Self::ui_main_container(Some(&name), ctx, |ui| {
                             if let Some(new_state) = self.emulator_gui.ui(ui) {

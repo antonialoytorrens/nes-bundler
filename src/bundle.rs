@@ -14,10 +14,6 @@ use crate::{emulation::NesRegion, input::gui::InputButtonsVoca, settings::Settin
 pub struct Vocabulary {
     #[serde(default = "Default::default")]
     pub input_buttons: InputButtonsVoca,
-
-    #[cfg(feature = "netplay")]
-    #[serde(default = "Default::default")]
-    pub netplay: crate::netplay::gui::NetplayVoca,
 }
 
 #[derive(Deserialize, Debug)]
@@ -32,9 +28,6 @@ pub struct BuildConfiguration {
     pub start_in_fullscreen: bool,
     #[serde(default = "Default::default")]
     pub vocabulary: Vocabulary,
-
-    #[cfg(feature = "netplay")]
-    pub netplay: crate::netplay::configuration::NetplayBuildConfiguration,
 }
 
 impl BuildConfiguration {
@@ -59,8 +52,6 @@ pub struct Bundle {
     pub settings_path: PathBuf,
     pub config: BuildConfiguration,
     pub rom: Vec<u8>,
-    #[cfg(feature = "netplay")]
-    pub netplay_rom: Vec<u8>,
 }
 impl Bundle {
     pub fn current() -> &'static Bundle {
@@ -92,11 +83,6 @@ impl Bundle {
             settings_path,
             config,
             rom,
-
-            #[cfg(feature = "netplay")]
-            netplay_rom: fs::read(Path::new("netplay-rom.nes"))
-                .inspect_err(|e| log::info!("Not using external netplay-rom.nes: {:?}", e))
-                .unwrap_or(include_bytes!("../config/netplay-rom.nes").to_vec()),
         })
     }
 }

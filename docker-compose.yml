@@ -1,0 +1,22 @@
+services:
+  bundler:
+    build:
+      context: .
+      dockerfile: bundler/Dockerfile
+    image: nes-bundler/bundler
+    container_name: nes_bundler
+    ports:
+      - "${BUNDLER_PORT:-8080}:8080"
+    restart: unless-stopped
+    environment:
+      BUNDLER_ALLOWED_IPS: "${BUNDLER_ALLOWED_IPS:-*}"
+      BUNDLER_MAX_CONCURRENT: "${BUNDLER_MAX_CONCURRENT:-1}"
+    volumes:
+      - bundler_jobs:/jobs
+      - bundler_cargo:/cargo-cache
+      - bundler_target:/target-cache
+
+volumes:
+  bundler_jobs:
+  bundler_cargo:
+  bundler_target:

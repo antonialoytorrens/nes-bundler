@@ -9,19 +9,13 @@ struct BundleConfiguration {
     name: String,
     short_description: String,
     version: Option<String>,
-    cf_bundle_identifier: String,
-    wix_upgrade_code: String,
-    manufacturer: String,
 }
 
 fn main() -> Result<()> {
     println!("cargo:rerun-if-changed=config/config.yaml");
     println!("cargo:rerun-if-changed=config/rom.nes");
-    println!("cargo:rerun-if-changed=config/netplay-rom.nes");
     println!("cargo:rerun-if-changed=config/palette.pal");
     println!("cargo:rerun-if-changed=config/linux/bundle.desktop-template");
-    println!("cargo:rerun-if-changed=config/macos/Info.plist-template");
-    println!("cargo:rerun-if-changed=config/windows/wix/main.wxs-template");
 
     let mut bundle_config: BundleConfiguration =
         serde_yaml::from_str(include_str!("config/config.yaml"))?;
@@ -67,27 +61,13 @@ fn main() -> Result<()> {
     }
 
     let mut tt = TinyTemplate::new();
-
-    tt.add_template(
-        "main.wxs",
-        include_str!("config/windows/wix/main.wxs-template"),
-    )?;
     tt.add_template(
         "bundle.desktop",
         include_str!("config/linux/bundle.desktop-template"),
     )?;
-    tt.add_template(
-        "Info.plist",
-        include_str!("config/macos/Info.plist-template"),
-    )?;
-
-    File::create("config/windows/wix/main.wxs")?
-        .write_all(tt.render("main.wxs", &bundle_config)?.as_bytes())?;
 
     File::create("config/linux/bundle.desktop")?
         .write_all(tt.render("bundle.desktop", &bundle_config)?.as_bytes())?;
 
-    File::create(std::path::Path::new("config/macos/Info.plist"))?
-        .write_all(tt.render("Info.plist", &bundle_config)?.as_bytes())?;
     Ok(())
 }

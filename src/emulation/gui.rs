@@ -13,8 +13,6 @@ struct DebugGui {
 }
 
 pub struct EmulatorGui {
-    #[cfg(feature = "netplay")]
-    netplay_gui: crate::netplay::gui::NetplayGui,
     #[cfg(feature = "debug")]
     debug_gui: DebugGui,
 }
@@ -22,8 +20,6 @@ impl EmulatorGui {
     #[allow(unused_variables)]
     pub fn new(shared_state: SharedState) -> Self {
         Self {
-            #[cfg(feature = "netplay")]
-            netplay_gui: crate::netplay::gui::NetplayGui::new(shared_state.netplay.clone()),
             #[cfg(feature = "debug")]
             debug_gui: DebugGui {
                 speed: 1.0,
@@ -81,26 +77,14 @@ impl GuiComponent for EmulatorGui {
         #[cfg(feature = "debug")]
         self.debug_gui.ui(ui);
 
-        #[cfg(feature = "netplay")]
-        return self.netplay_gui.ui(ui);
-
-        #[cfg(not(feature = "netplay"))]
         None
     }
 
-    #[cfg(feature = "netplay")]
-    fn messages(&self, menu_state: &MainMenuState) -> Option<Vec<String>> {
-        self.netplay_gui.messages(menu_state)
-    }
-
     fn name(&self) -> Option<&str> {
-        #[cfg(feature = "netplay")]
-        return self.netplay_gui.name();
-
-        #[cfg(all(feature = "debug", not(feature = "netplay")))]
+        #[cfg(feature = "debug")]
         return Some("Debug");
 
-        #[cfg(not(any(feature = "netplay", feature = "debug")))]
+        #[cfg(not(feature = "debug"))]
         None
     }
 }
