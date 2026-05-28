@@ -63,7 +63,7 @@ BUNDLE_SLUG="${BUNDLE_NAME}_${BUNDLE_VERSION}"
 log "Bundle: $BUNDLE_NAME $BUNDLE_VERSION"
 
 # server.py reads this for the /download Content-Disposition filename so the
-# user gets `${BUNDLE_SLUG}.tar.gz` instead of the opaque job_id.
+# user gets `${BUNDLE_SLUG}.zip` instead of the opaque job_id.
 echo -n "$BUNDLE_SLUG" > "$JOB_DIR/bundle.name"
 
 # Per-job working source tree. We hardlink-copy $SRC_DIR into the job dir and
@@ -105,14 +105,10 @@ fi
 log "cargo zigbuild --target x86_64-unknown-linux-gnu.2.17 ..."
 cargo zigbuild --locked --release --target x86_64-unknown-linux-gnu.2.17
 
-# Rename the binary inside the tarball to match the bundle so users get a
-# meaningful filename after extracting (not a generic 'nes-bundler').
-LINUX_STAGE="$(mktemp -d)"
-trap 'rm -rf "$LINUX_STAGE"' EXIT
+# Rename the binary to match the bundle so users get a meaningful filename
+# after extracting (not a generic 'nes-bundler').
 cp "${CARGO_TARGET_DIR}/x86_64-unknown-linux-gnu/release/nes-bundler" \
-   "${LINUX_STAGE}/${BUNDLE_NAME}"
-tar -C "$LINUX_STAGE" -czf \
-    "${ARTIFACTS_DIR}/${BUNDLE_SLUG}_Linux.tar.gz" "${BUNDLE_NAME}"
+   "${ARTIFACTS_DIR}/${BUNDLE_SLUG}_Linux"
 
 # Windows cross via mingw: ship the raw .exe (no glibc concerns).
 log "cargo build --target x86_64-pc-windows-gnu ..."
@@ -121,7 +117,11 @@ cp "${CARGO_TARGET_DIR}/x86_64-pc-windows-gnu/release/nes-bundler.exe" \
    "${ARTIFACTS_DIR}/${BUNDLE_SLUG}_Windows.exe"
 
 log "Packing bundle..."
-cd "$JOB_DIR"
-tar -czf bundle.tar.gz -C artifacts .
+ZIP_STAGE="$(mktemp -d)"
+trap 'rm -rf "$ZIP_STAGE"' EXIT
+mkdir "${ZIP_STAGE}/${BUNDLE_SLUG}"
+cp "${ARTIFACTS_DIR}/${BUNDLE_SLUG}_Linux"       "${ZIP_STAGE}/${BUNDLE_SLUG}/"
+cp "${ARTIFACTS_DIR}/${BUNDLE_SLUG}_Windows.exe" "${ZIP_STAGE}/${BUNDLE_SLUG}/"
+(cd "$ZIP_STAGE" && zip -r "${JOB_DIR}/bundle.zip" "${BUNDLE_SLUG}/")
 
 log "Done"

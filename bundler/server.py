@@ -82,7 +82,7 @@ async def run_build(job_id: str) -> None:
         except Exception as e:
             write_status(job_dir, Status.FAILED, f"build launcher error: {e!r}")
             return
-        bundle = job_dir / "bundle.tar.gz"
+        bundle = job_dir / "bundle.zip"
         if rc == 0 and bundle.exists():
             write_status(job_dir, Status.DONE)
         else:
@@ -139,7 +139,7 @@ async def download_bundle(job_id: str):
     job_dir = JOBS_DIR / job_id
     if not job_dir.exists():
         raise HTTPException(404, "job not found")
-    bundle = job_dir / "bundle.tar.gz"
+    bundle = job_dir / "bundle.zip"
     if not bundle.exists():
         # If the job completed successfully, the artifact was purged by the
         # janitor (see bundler/cleanup.py + BUNDLER_BUNDLE_TTL_SECONDS).
@@ -152,8 +152,8 @@ async def download_bundle(job_id: str):
     slug = name_file.read_text().strip() if name_file.exists() else f"nes-bundler-{job_id}"
     return FileResponse(
         bundle,
-        media_type="application/gzip",
-        filename=f"{slug}.tar.gz",
+        media_type="application/zip",
+        filename=f"{slug}.zip",
     )
 
 

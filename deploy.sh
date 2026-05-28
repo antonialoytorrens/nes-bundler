@@ -341,7 +341,7 @@ BUNDLER_SOURCE_DIR=/opt/nesbundler
 BUNDLER_BUILD_SCRIPT=/opt/nesbundler/bundler/build.sh
 
 # Retention windows for the periodic janitor (nesbundler-cleanup.timer).
-# bundle.tar.gz is purged after BUNDLE_TTL; full job dir after JOB_TTL. The
+# bundle.zip is purged after BUNDLE_TTL; full job dir after JOB_TTL. The
 # bundle TTL must be <= the job TTL; the janitor logs a WARNING line into
 # build.log before either purge so the audit trail survives.
 BUNDLER_BUNDLE_TTL_SECONDS=3600
@@ -482,6 +482,7 @@ fpm \
     --depends "ca-certificates" \
     --depends "curl" \
     --depends "p7zip-full" \
+    --depends "zip" \
     --depends "mingw-w64" \
     --depends "python3" \
     --depends "python3-fastapi" \

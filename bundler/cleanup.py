@@ -4,7 +4,7 @@
 Two retention windows, both configurable via /etc/nesbundler/default:
 
   BUNDLER_BUNDLE_TTL_SECONDS (default 3600  = 1 h)
-      How long the downloadable artifact (bundle.tar.gz) is kept after
+      How long the downloadable artifact (bundle.zip) is kept after
       the job dir was created. When this elapses, only the artifact is
       removed; the job's status + log are kept so users polling the job
       can see *why* their download disappeared.
@@ -46,7 +46,7 @@ def _append_log(log_path: Path, msg: str) -> None:
 def _purge_bundle(job_dir: Path, bundle: Path, age: int) -> bool:
     _append_log(
         job_dir / "build.log",
-        f"bundle.tar.gz purged after {age}s "
+        f"bundle.zip purged after {age}s "
         f"(BUNDLER_BUNDLE_TTL_SECONDS={BUNDLE_TTL}). "
         f"Job metadata + log retained until job TTL "
         f"(BUNDLER_JOB_TTL_SECONDS={JOB_TTL}) elapses.",
@@ -95,7 +95,7 @@ def main() -> int:
                 jobs_purged += 1
             continue
 
-        bundle = job_dir / "bundle.tar.gz"
+        bundle = job_dir / "bundle.zip"
         if bundle.exists():
             try:
                 bundle_age = int(now - bundle.stat().st_mtime)
