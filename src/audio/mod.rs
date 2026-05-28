@@ -11,7 +11,7 @@ pub type AudioSystem = SDL3AudioSystem;
 pub type AudioStream = SDL3AudioStream;
 pub type AvailableAudioDevice = SDL3AvailableAudioDevice;
 
-pub const MAX_AUDIO_LATENCY_MICROS: u32 = 40_000;
+pub const MAX_AUDIO_LATENCY_MICROS: u32 = 80_000;
 pub const MIN_AUDIO_LATENCY_MICROS: u32 = 8_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
@@ -27,7 +27,7 @@ pub struct AudioSettings {
 
 impl AudioSettings {
     pub const fn default_latency_micros() -> u32 {
-        16_000
+        40_000
     }
     fn de_latency<'de, D>(deserializer: D) -> Result<u32, D::Error>
     where
