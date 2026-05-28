@@ -1,23 +1,36 @@
 import asyncio
+import hmac
 import os
 import shutil
 import uuid
 from enum import Enum
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile
+from dotenv import load_dotenv
+from fastapi import FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+
+
+# Load .env from the bundler service's working dir if present. Real env vars
+# (docker-compose `environment:`, systemd `EnvironmentFile=`) still win — this
+# is just the fallback for plain `python -m uvicorn server:app` runs.
+load_dotenv(override=False)
 
 
 JOBS_DIR = Path(os.environ.get("BUNDLER_JOBS_DIR", "/jobs"))
 SOURCE_DIR = Path(os.environ.get("BUNDLER_SOURCE_DIR", "/src"))
 BUILD_SCRIPT = os.environ.get("BUNDLER_BUILD_SCRIPT", "/usr/local/bin/build.sh")
-ALLOWED_IPS = [
-    ip.strip()
-    for ip in os.environ.get("BUNDLER_ALLOWED_IPS", "*").split(",")
-    if ip.strip()
-]
+# Shared secret. The client POSTs a `token` form field with each /bundle call;
+# if it doesn't match BUNDLER_TOKEN exactly, the job is rejected. Required —
+# starting the service without a token is a misconfiguration, not a default.
+BUNDLER_TOKEN = os.environ.get("BUNDLER_TOKEN", "").strip()
 MAX_CONCURRENT = max(1, int(os.environ.get("BUNDLER_MAX_CONCURRENT", "1")))
+
+if not BUNDLER_TOKEN:
+    raise RuntimeError(
+        "BUNDLER_TOKEN is not set. Put it in .env (or the systemd EnvironmentFile / "
+        "docker-compose environment) — the service refuses to start without one."
+    )
 
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -33,10 +46,10 @@ class Status(str, Enum):
     FAILED = "failed"
 
 
-def is_allowed(client_ip: str | None) -> bool:
-    if "*" in ALLOWED_IPS or not ALLOWED_IPS:
-        return True
-    return client_ip in ALLOWED_IPS
+def check_token(token: str | None) -> None:
+    # hmac.compare_digest avoids timing side-channels on the comparison.
+    if not token or not hmac.compare_digest(token, BUNDLER_TOKEN):
+        raise HTTPException(status_code=401, detail="invalid or missing token")
 
 
 def write_status(job_dir: Path, status: Status, error: str | None = None) -> None:
@@ -57,14 +70,18 @@ async def run_build(job_id: str) -> None:
     async with build_semaphore:
         write_status(job_dir, Status.RUNNING)
         log_path = job_dir / "build.log"
-        with log_path.open("wb") as log:
-            proc = await asyncio.create_subprocess_exec(
-                BUILD_SCRIPT,
-                str(job_dir),
-                stdout=log,
-                stderr=asyncio.subprocess.STDOUT,
-            )
-            rc = await proc.wait()
+        try:
+            with log_path.open("wb") as log:
+                proc = await asyncio.create_subprocess_exec(
+                    BUILD_SCRIPT,
+                    str(job_dir),
+                    stdout=log,
+                    stderr=asyncio.subprocess.STDOUT,
+                )
+                rc = await proc.wait()
+        except Exception as e:
+            write_status(job_dir, Status.FAILED, f"build launcher error: {e!r}")
+            return
         bundle = job_dir / "bundle.tar.gz"
         if rc == 0 and bundle.exists():
             write_status(job_dir, Status.DONE)
@@ -82,10 +99,12 @@ def _urls(request: Request, job_id: str) -> dict[str, str]:
 
 
 @app.post("/bundle")
-async def create_bundle(request: Request, config: UploadFile):
-    client_ip = request.client.host if request.client else None
-    if not is_allowed(client_ip):
-        raise HTTPException(status_code=403, detail="forbidden")
+async def create_bundle(
+    request: Request,
+    config: UploadFile,
+    token: str = Form(...),
+):
+    check_token(token)
 
     job_id = uuid.uuid4().hex
     job_dir = JOBS_DIR / job_id
@@ -118,13 +137,23 @@ async def get_job(job_id: str, request: Request):
 @app.get("/jobs/{job_id}/download")
 async def download_bundle(job_id: str):
     job_dir = JOBS_DIR / job_id
+    if not job_dir.exists():
+        raise HTTPException(404, "job not found")
     bundle = job_dir / "bundle.tar.gz"
     if not bundle.exists():
+        # If the job completed successfully, the artifact was purged by the
+        # janitor (see bundler/cleanup.py + BUNDLER_BUNDLE_TTL_SECONDS).
+        if read_status(job_dir) == Status.DONE:
+            raise HTTPException(410, "bundle expired and was purged — see /log")
         raise HTTPException(404, "bundle not ready")
+    # build.sh writes "${name}_${version}" here. Fallback to the opaque
+    # job_id only for legacy jobs that predate this file.
+    name_file = job_dir / "bundle.name"
+    slug = name_file.read_text().strip() if name_file.exists() else f"nes-bundler-{job_id}"
     return FileResponse(
         bundle,
         media_type="application/gzip",
-        filename=f"nes-bundler-{job_id}.tar.gz",
+        filename=f"{slug}.tar.gz",
     )
 
 

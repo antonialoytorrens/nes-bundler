@@ -64,9 +64,9 @@ winit = "0.30"
 wgpu = { version = "27", features = ["dx12", "metal"] }
 raw-window-handle = "0.6"
 
-sdl3 = { version = "0.17", features = ["build-from-source-static"] }
+sdl3 = { version = "0.17", features = ["static-link", "use-pkg-config"] }
 
-tetanes-core = { git = "https://github.com/lukexor/tetanes.git" }
+tetanes-core = "0.13"
 postcard = { version = "1.1", features = ["alloc"] }
 thingbuf = "0.1"
 ringbuf = "0.4"

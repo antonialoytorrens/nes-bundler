@@ -20,12 +20,17 @@ Download a binary from [Releases](https://github.com/tedsteen/nes-bundler/releas
 
 ## Bundling your own game
 
-[Configure your bundle](config/README.md), zip it with `config/prepare.sh`, and POST the zip to your bundler service:
+[Configure your bundle](config/README.md), zip it with `config/prepare.sh`, and POST the zip — together with the bundler's shared `token` — to your bundler service:
 
 ```bash
-curl -X POST -F "config=@config.zip" https://your-bundler.example/bundle
+curl -X POST \
+  -F "token=$BUNDLER_TOKEN" \
+  -F "config=@config.zip" \
+  https://your-bundler.example/bundle
 # {"job_id":"...","status_url":"...","download_url":"...","log_url":"..."}
 ```
+
+`BUNDLER_TOKEN` is the shared secret configured on the server (see `.env.example`). Requests without it — or with the wrong value — are rejected with `401 invalid or missing token`. Generate one with `openssl rand -hex 32` and share it out-of-band with whoever is allowed to submit builds.
 
 Poll `status_url` until status is `done`, then GET `download_url` for a tarball containing the Linux and Windows builds. See [bundler/](bundler/) for how to run that service yourself.
 
@@ -48,7 +53,9 @@ cargo run --profile dev
 The `bundler/` service builds Linux x86_64 + Windows x86_64 (cross-compiled with `mingw-w64`) on a single Linux host. Bring it up with Docker Compose:
 
 ```bash
-cp .env.example .env  # tweak BUNDLER_PORT / BUNDLER_ALLOWED_IPS as needed
+cp .env.example .env
+# Set BUNDLER_TOKEN to a long random string — the service won't start without it:
+#   sed -i "s|^BUNDLER_TOKEN=.*|BUNDLER_TOKEN=$(openssl rand -hex 32)|" .env
 docker compose up -d --build
 docker compose logs -f bundler
 ```

@@ -9,7 +9,7 @@ services:
       - "${BUNDLER_PORT:-8080}:8080"
     restart: unless-stopped
     environment:
-      BUNDLER_ALLOWED_IPS: "${BUNDLER_ALLOWED_IPS:-*}"
+      BUNDLER_TOKEN: "${BUNDLER_TOKEN:?BUNDLER_TOKEN must be set in .env}"
       BUNDLER_MAX_CONCURRENT: "${BUNDLER_MAX_CONCURRENT:-1}"
     volumes:
       - bundler_jobs:/jobs
